@@ -2,19 +2,20 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"log"
-	"net/url"
+	"net/http"
 )
 
 func main() {
-	u, err := url.Parse("http://bing.com/search?q=dotnet")
+	res, err := http.Get("http://www.google.com/robots.txt")
 	if err != nil {
 		log.Fatal(err)
 	}
-	u.Scheme = "https"
-	u.Host = "google.com"
-	q := u.Query()
-	q.Set("q", "golang")
-	u.RawQuery = q.Encode()
-	fmt.Println(u)
+	robots, err := ioutil.ReadAll(res.Body)
+	res.Body.Close()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("%s", robots)
 }
