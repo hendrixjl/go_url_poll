@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"strings"
 	"strconv"
+	"errors"
+	"time"
 )
 
 func stuff(b []byte) string {
@@ -19,36 +21,48 @@ func stuff(b []byte) string {
 	return lns[0]
 }
 
-func downup(s string) (down float64, up float64) {
+// Holds a pair of magnitudes: one for downstream, one for upstream
+type magnitude struct {
+	down float64
+	up float64
+}
+
+func downup(s string) magnitude {
+	mag := magnitude{0.0, 0.0}
 	pcs := strings.Split(s, ">");
 	pcs = strings.Split(pcs[1], "\u00A0dB")
 	const (
 		FLOAT_64_SIZE=64 
 	)
 	var err error
-	down, err = strconv.ParseFloat(pcs[0], FLOAT_64_SIZE)
-	if (err != nil) {
-		down = 0
-		up = 0
-		return
+	mag.down, err = strconv.ParseFloat(pcs[0], FLOAT_64_SIZE)
+	if err != nil {
+		err = errors.New("Error parsing downstream number")
+		return mag
 	}
 	pcs = strings.Split(pcs[1], ")\u00A0")
-	up, err = strconv.ParseFloat(pcs[1], FLOAT_64_SIZE)
-	if (err != nil) {
-		up = 0
+	mag.up, err = strconv.ParseFloat(pcs[1], FLOAT_64_SIZE)
+	if err != nil {
+		err = errors.New("Error parsing upstream number")
 	}
-	return
+	return mag
 }
 
-func numbers(s string) (cnmd float64, cnmu float64, cad float64, cau float64, copd float64, copu float64) {
+type currents struct {
+	noiseMargin magnitude
+	attenuation magnitude
+	outputPower magnitude
+}
+
+func numbers(s string) (curr currents) {
 	lns := strings.Split(s, "\n")
-	cnmd, cnmu = downup(lns[1])
-	cad, cau = downup(lns[5])
-	copd, copu = downup(lns[9])
+	curr.noiseMargin = downup(lns[1])
+	curr.attenuation = downup(lns[5])
+	curr.outputPower = downup(lns[9])
 	return
 }
 
-func main() {
+func pollrouter() {
 	res, err := http.Get("http://192.168.1.254/xslt?PAGE=B02&THISPAGE=B01&NEXTPAGE=B02")
 	if err != nil {
 		log.Fatal(err)
@@ -59,10 +73,18 @@ func main() {
 		log.Fatal(err)
 	}
 	s := stuff(page)
-
-	currentNoiseMarginDown, currentNoiseMarginUp, currentAttenuationDown, currentAttenuationUp, currentOutputPowerDown, currentOutputPowerUp := numbers(s)
-	fmt.Printf(" (%f,%f) (%f,%f) (%f,%f)\n",
-		currentNoiseMarginDown, currentNoiseMarginUp,
-		currentAttenuationDown, currentAttenuationUp,
-		currentOutputPowerDown, currentOutputPowerUp)
+	current := numbers(s)
+	fmt.Printf("%s\t(%6.3f,%6.3f)\t(%6.3f,%6.3f)\t(%6.3f,%6.3f)\n", time.Now(),
+		current.noiseMargin.down, current.noiseMargin.up,
+		current.attenuation.down, current.attenuation.up,
+		current.outputPower.down, current.outputPower.up)
 }
+
+func main() {
+
+	for {
+		pollrouter()
+		time.Sleep(time.Minute)
+	}
+}
+
